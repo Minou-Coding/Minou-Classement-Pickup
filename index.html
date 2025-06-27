@@ -775,7 +775,6 @@
       title: "",
       description: "",
       color: 0x00d4ff,
-      image: { url: "" },
       footer: { text: "" }
     };
     let currentWebhook = "";
@@ -806,15 +805,33 @@
     }
 
     function updateEmbed() {
-      embed.title = document.getElementById("title").value || "Titre de l'embed";
-      embed.description = document.getElementById("ranking-text").value || "Description de l'embed";
-      embed.image.url = document.getElementById("ranking-image").value;
-      embed.footer.text = `Créé avec Discembed Creator x Minou_Offciel • ${getFrenchDateTime()}`;
-      currentWebhook = document.getElementById("webhook").value;
-      currentUsername = document.getElementById("username").value || "Discembed Bot";
+      // Récupération des valeurs avec nettoyage
+      const title = document.getElementById("title").value.trim();
+      const description = document.getElementById("ranking-text").value.trim();
+      const imageUrl = document.getElementById("ranking-image").value.trim();
       
-      const userIds = document.getElementById("mention-users").value;
-      const roleIds = document.getElementById("mention-roles").value;
+      // Mise à jour de l'embed avec validation
+      embed.title = title || "Titre de l'embed";
+      embed.description = description || "Description de l'embed";
+      embed.color = 0x00d4ff;
+      
+      // Image seulement si URL valide
+      if (imageUrl && isValidUrl(imageUrl)) {
+        embed.image = { url: imageUrl };
+      } else {
+        delete embed.image;
+      }
+      
+      embed.footer = { 
+        text: `Créé avec Discembed Creator x Minou_Offciel • ${getFrenchDateTime()}` 
+      };
+      
+      // Mise à jour des variables globales
+      currentWebhook = document.getElementById("webhook").value.trim();
+      currentUsername = document.getElementById("username").value.trim() || "Discembed Bot";
+      
+      const userIds = document.getElementById("mention-users").value.trim();
+      const roleIds = document.getElementById("mention-roles").value.trim();
       
       mentionUsers = userIds ? userIds.split(",").map(id => id.trim()).filter(Boolean) : [];
       mentionRoles = roleIds ? roleIds.split(",").map(id => id.trim()).filter(Boolean) : [];
@@ -837,13 +854,22 @@
       const content = document.createElement("div");
       content.className = "embed-content";
       
-      content.innerHTML = `
+      // Construction du HTML avec validation
+      let embedHTML = `
         <div class="embed-title">${embed.title}</div>
         <div class="embed-description">${embed.description}</div>
-        ${embed.image.url ? `<img class="embed-image" src="${embed.image.url}" onerror="this.style.display='none'" />` : ''}
-        <div class="embed-footer">${embed.footer.text}</div>
       `;
+      
+      // Ajouter l'image seulement si elle existe et est valide
+      if (embed.image && embed.image.url) {
+        embedHTML += `<img class="embed-image" src="${embed.image.url}" onerror="this.style.display='none'" />`;
+      }
+      
+      embedHTML += `<div class="embed-footer">${embed.footer.text}</div>`;
+      
+      content.innerHTML = embedHTML;
 
+      // Affichage des mentions
       const combinedMentions = [
         ...mentionUsers.map(id => `<@${id}>`),
         ...mentionRoles.map(id => `<@&${id}>`)
@@ -874,25 +900,69 @@
       btn.innerHTML = '<span class="loading"></span> Envoi en cours...';
       btn.disabled = true;
 
-      // Mise à jour de la date/heure avant envoi
-      embed.footer.text = `Créé avec Discembed Creator x Minou_Offciel • ${getFrenchDateTime()}`;
-
-      const content = [
-        ...mentionUsers.map(id => `<@${id}>`),
-        ...mentionRoles.map(id => `<@&${id}>`)
-      ].join(" ");
-
-      const payload = {
-        username: currentUsername,
-        embeds: [embed]
-      };
-
-      // Ajouter le contenu seulement s'il y a des mentions
-      if (content.trim()) {
-        payload.content = content;
-      }
-
       try {
+        // Validation et nettoyage de l'embed
+        const cleanEmbed = {};
+
+        // Titre (obligatoire pour un embed valide)
+        const title = document.getElementById("title").value.trim();
+        if (title) {
+          cleanEmbed.title = title.substring(0, 256); // Max 256 caractères
+        }
+
+        // Description
+        const description = document.getElementById("ranking-text").value.trim();
+        if (description) {
+          cleanEmbed.description = description.substring(0, 4096); // Max 4096 caractères
+        }
+
+        // Si ni titre ni description, on refuse l'envoi
+        if (!cleanEmbed.title && !cleanEmbed.description) {
+          showMessage("❌ Veuillez remplir au moins le titre ou la description", "error");
+          btn.innerHTML = originalHTML;
+          btn.disabled = false;
+          return;
+        }
+
+        // Couleur
+        cleanEmbed.color = 0x00d4ff;
+
+        // Image (seulement si URL valide)
+        const imageUrl = document.getElementById("ranking-image").value.trim();
+        if (imageUrl && isValidUrl(imageUrl)) {
+          cleanEmbed.image = { url: imageUrl };
+        }
+
+        // Footer
+        cleanEmbed.footer = {
+          text: `Créé avec Discembed Creator x Minou_Offciel • ${getFrenchDateTime()}`
+        };
+
+        // Timestamp
+        cleanEmbed.timestamp = new Date().toISOString();
+
+        // Préparation du contenu avec mentions
+        const content = [
+          ...mentionUsers.map(id => `<@${id}>`),
+          ...mentionRoles.map(id => `<@&${id}>`)
+        ].join(" ");
+
+        const payload = {
+          embeds: [cleanEmbed]
+        };
+
+        // Ajouter le nom d'utilisateur si spécifié
+        if (currentUsername.trim()) {
+          payload.username = currentUsername.trim().substring(0, 80); // Max 80 caractères
+        }
+
+        // Ajouter le contenu seulement s'il y a des mentions
+        if (content.trim()) {
+          payload.content = content.trim().substring(0, 2000); // Max 2000 caractères
+        }
+
+        console.log('Payload envoyé:', JSON.stringify(payload, null, 2));
+
         const response = await fetch(currentWebhook, {
           method: "POST",
           headers: { 
@@ -908,7 +978,7 @@
           console.error('Erreur Discord:', response.status, errorText);
           
           if (response.status === 400) {
-            showMessage("❌ Données invalides - Vérifiez votre webhook et vos données", "error");
+            showMessage("❌ Données invalides - Vérifiez vos champs (titre/description requis)", "error");
           } else if (response.status === 401) {
             showMessage("❌ Webhook non autorisé", "error");
           } else if (response.status === 404) {
@@ -928,13 +998,27 @@
       }
     }
 
+    // Fonction pour valider les URLs
+    function isValidUrl(string) {
+      try {
+        new URL(string);
+        return string.startsWith('http://') || string.startsWith('https://');
+      } catch (_) {
+        return false;
+      }
+    }
+
     function saveJSON() {
+      const title = document.getElementById("title").value.trim();
+      const description = document.getElementById("ranking-text").value.trim();
+      const imageUrl = document.getElementById("ranking-image").value.trim();
+      
       const data = {
         webhook: currentWebhook,
         username: currentUsername,
-        title: embed.title,
-        description: embed.description,
-        image: embed.image.url,
+        title: title,
+        description: description,
+        image: imageUrl,
         mentions_users: mentionUsers,
         mentions_roles: mentionRoles,
         imgbb_api_key: localStorage.getItem("imgbb_api_key") || ""
